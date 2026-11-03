@@ -1,0 +1,398 @@
+
+name: Build VideoHub Pro APK
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.2"
+
+      - name: Create Android Project
+        run: |
+          mkdir -p app/src/main/java/com/videohub/app
+
+          cat <<'EOF' > settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "VideoHub"
+          include ':app'
+          EOF
+
+          cat <<'EOF' > build.gradle
+          plugins {
+              id 'com.android.application' version '8.2.0' apply false
+          }
+          EOF
+
+          cat <<'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.videohub.app'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.videohub.app"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 4
+                  versionName "4.0"
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
+          cat <<'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="VideoHub Pro"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
+                  android:usesCleartextTraffic="false">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:configChanges="orientation|screenSize|keyboardHidden"
+                      android:exported="true">
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat <<'EOF' > app/src/main/java/com/videohub/app/MainActivity.java
+          package com.videohub.app;
+
+          import android.app.Activity;
+          import android.app.DownloadManager;
+          import android.content.Context;
+          import android.graphics.Color;
+          import android.net.Uri;
+          import android.os.Bundle;
+          import android.os.Environment;
+          import android.view.View;
+          import android.webkit.DownloadListener;
+          import android.webkit.URLUtil;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.widget.Button;
+          import android.widget.EditText;
+          import android.widget.LinearLayout;
+          import android.widget.Toast;
+
+          public class MainActivity extends Activity {
+
+              private WebView webView;
+              private EditText urlInput;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  LinearLayout mainLayout = new LinearLayout(this);
+                  mainLayout.setOrientation(LinearLayout.VERTICAL);
+                  mainLayout.setBackgroundColor(Color.rgb(18, 18, 18));
+
+                  LinearLayout topBar = new LinearLayout(this);
+                  topBar.setOrientation(LinearLayout.HORIZONTAL);
+                  topBar.setPadding(8, 8, 8, 8);
+                  topBar.setBackgroundColor(Color.rgb(31, 31, 31));
+
+                  urlInput = new EditText(this);
+                  urlInput.setHint("Search or paste video link...");
+                  urlInput.setTextColor(Color.WHITE);
+                  urlInput.setHintTextColor(Color.GRAY);
+                  urlInput.setSingleLine(true);
+
+                  LinearLayout.LayoutParams inputParams =
+                      new LinearLayout.LayoutParams(
+                          0,
+                          LinearLayout.LayoutParams.WRAP_CONTENT,
+                          1f
+                      );
+
+                  topBar.addView(urlInput, inputParams);
+
+                  Button goBtn = new Button(this);
+                  goBtn.setText("GO");
+                  topBar.addView(goBtn);
+
+                  Button downloadBtn = new Button(this);
+                  downloadBtn.setText("Download");
+                  downloadBtn.setTextColor(Color.WHITE);
+                  downloadBtn.setBackgroundColor(Color.rgb(229, 9, 20));
+                  topBar.addView(downloadBtn);
+
+                  LinearLayout navBar = new LinearLayout(this);
+                  navBar.setOrientation(LinearLayout.HORIZONTAL);
+                  navBar.setBackgroundColor(Color.rgb(24, 24, 24));
+
+                  Button ytBtn = new Button(this);
+                  ytBtn.setText("YouTube");
+
+                  Button fbBtn = new Button(this);
+                  fbBtn.setText("Facebook");
+
+                  Button igBtn = new Button(this);
+                  igBtn.setText("Instagram");
+
+                  LinearLayout.LayoutParams navParams =
+                      new LinearLayout.LayoutParams(
+                          0,
+                          LinearLayout.LayoutParams.WRAP_CONTENT,
+                          1f
+                      );
+
+                  navBar.addView(ytBtn, navParams);
+                  navBar.addView(fbBtn, navParams);
+                  navBar.addView(igBtn, navParams);
+
+                  webView = new WebView(this);
+
+                  WebSettings settings = webView.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setMediaPlaybackRequiresUserGesture(true);
+
+                  webView.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public void onPageFinished(WebView view, String url) {
+                          urlInput.setText(url);
+                      }
+                  });
+
+                  webView.setWebChromeClient(new WebChromeClient());
+
+                  webView.setDownloadListener(
+                      new DownloadListener() {
+                          @Override
+                          public void onDownloadStart(
+                              String url,
+                              String userAgent,
+                              String contentDisposition,
+                              String mimeType,
+                              long contentLength
+                          ) {
+                              startDownload(
+                                  url,
+                                  contentDisposition,
+                                  mimeType,
+                                  userAgent
+                              );
+                          }
+                      }
+                  );
+
+                  LinearLayout.LayoutParams webParams =
+                      new LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          0,
+                          1f
+                      );
+
+                  webView.setLayoutParams(webParams);
+
+                  goBtn.setOnClickListener(v -> {
+                      String query = urlInput.getText().toString().trim();
+
+                      if (query.isEmpty()) return;
+
+                      if (query.startsWith("https://") ||
+                          query.startsWith("http://")) {
+                          webView.loadUrl(query);
+                      } else {
+                          webView.loadUrl(
+                              "https://www.google.com/search?q=" +
+                              Uri.encode(query)
+                          );
+                      }
+                  });
+
+                  ytBtn.setOnClickListener(
+                      v -> webView.loadUrl("https://m.youtube.com")
+                  );
+
+                  fbBtn.setOnClickListener(
+                      v -> webView.loadUrl("https://m.facebook.com")
+                  );
+
+                  igBtn.setOnClickListener(
+                      v -> webView.loadUrl("https://www.instagram.com")
+                  );
+
+                  downloadBtn.setOnClickListener(v ->
+                      Toast.makeText(
+                          this,
+                          "Use a direct media download link for authorized downloads.",
+                          Toast.LENGTH_LONG
+                      ).show()
+                  );
+
+                  mainLayout.addView(topBar);
+                  mainLayout.addView(navBar);
+                  mainLayout.addView(webView);
+
+                  setContentView(mainLayout);
+
+                  webView.loadUrl("https://m.youtube.com");
+              }
+
+              private void startDownload(
+                  String url,
+                  String contentDisposition,
+                  String mimeType,
+                  String userAgent
+              ) {
+                  try {
+                      Uri uri = Uri.parse(url);
+
+                      if (!"https".equalsIgnoreCase(uri.getScheme()) &&
+                          !"http".equalsIgnoreCase(uri.getScheme())) {
+                          Toast.makeText(
+                              this,
+                              "Unsupported download link.",
+                              Toast.LENGTH_SHORT
+                          ).show();
+                          return;
+                      }
+
+                      String fileName = URLUtil.guessFileName(
+                          url,
+                          contentDisposition,
+                          mimeType
+                      );
+
+                      DownloadManager.Request request =
+                          new DownloadManager.Request(uri);
+
+                      request.setTitle(fileName);
+                      request.setDescription("Downloading authorized media...");
+                      request.setNotificationVisibility(
+                          DownloadManager.Request
+                              .VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                      );
+
+                      request.setDestinationInExternalPublicDir(
+                          Environment.DIRECTORY_DOWNLOADS,
+                          fileName
+                      );
+
+                      if (userAgent != null) {
+                          request.addRequestHeader("User-Agent", userAgent);
+                      }
+
+                      DownloadManager manager =
+                          (DownloadManager) getSystemService(
+                              Context.DOWNLOAD_SERVICE
+                          );
+
+                      if (manager != null) {
+                          manager.enqueue(request);
+
+                          Toast.makeText(
+                              this,
+                              "Download started: " + fileName,
+                              Toast.LENGTH_LONG
+                          ).show();
+                      }
+
+                  } catch (Exception e) {
+                      Toast.makeText(
+                          this,
+                          "Download could not be started.",
+                          Toast.LENGTH_LONG
+                      ).show();
+                  }
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (webView != null) {
+                      webView.destroy();
+                  }
+                  super.onDestroy();
+              }
+          }
+          EOF
+
+      - name: Build VideoHub Pro APK
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Upload VideoHub Pro APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoHub-Pro-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
